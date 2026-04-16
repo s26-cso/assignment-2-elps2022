@@ -1,10 +1,9 @@
-# in c we have a struct with val and left and right
-#in assembly, we have to somehow define such a struct and make it so its traversable
 .globl make_node, insert, get, getAtMost
 .equ NODE_LEFT,0
 .equ NODE_RIGHT,8
 .equ NODE_VAL,16
 .equ NODE_SIZE,20
+
 make_node:#a0 contains val
     addi sp,sp,-16 #because malloc call overwrites return address, need to save it on the stack
     sd ra,0(sp)
@@ -19,6 +18,7 @@ make_node:#a0 contains val
     ld s0,8(sp)
     addi sp,sp,16
     ret
+
 insert: #a0 contains the node, a1 contains the value to be inserted
     addi sp,sp,-48
     sd ra,0(sp)
@@ -33,17 +33,25 @@ insert: #a0 contains the node, a1 contains the value to be inserted
     sd a0,40(sp)   #save new node
     ld t0,24(sp)   #root node
     ld a1,32(sp)   #restore val
+
+    #if root is NULL, the new node becomes the root directly
+    # without this, we'd jump to insertion with t1=0 (NULL)
+    # and dereference it with lw t2,NODE_VAL(t1),a null dereference crash
+    beqz t0,return_new_node
+
     li t1,0        #parent = NULL
-    traversal:
+
+traversal:
         beqz t0,insertion       #if current node is NULL, insert here
         lw t2,NODE_VAL(t0)
         mv t1,t0                #save parent
         blt a1,t2,less_than
         ld t0,NODE_RIGHT(t0)
         j traversal
-    less_than:
+less_than:
         ld t0,NODE_LEFT(t0)
         j traversal
+
 insertion:
     ld t3,40(sp)            #new node
     lw t2,NODE_VAL(t1)
@@ -51,7 +59,8 @@ insertion:
     sd t3,NODE_RIGHT(t1)
     j done
 insert_left:
-    sd a0,NODE_LEFT(t1)
+    sd t3,NODE_LEFT(t1)    
+                             
 done:
     ld a0,24(sp)   #return root
     ld s1,16(sp)
@@ -60,29 +69,38 @@ done:
     addi sp,sp,48
     ret
 
+return_new_node:
+    # FIX: tree was empty, so return the newly created node as the root
+    ld a0,40(sp)
+    ld s1,16(sp)
+    ld s0,8(sp)
+    ld ra,0(sp)
+    addi sp,sp,48
+    ret
+
 get:#traverse through tree until you get null or the node, a0=pointer to root, a1=value
     mv t0,a0
-    traversal_get:
+traversal_get:
         beqz t0,return_miss
         lw t1,NODE_VAL(t0)
         beq t1,a1,return_hit
         blt a1,t1,less_than_get
         ld t0,NODE_RIGHT(t0)
         j traversal_get
-    less_than_get:
+less_than_get:
         ld t0,NODE_LEFT(t0)
         j traversal_get
-    return_miss:
+return_miss:
         mv a0,x0
         ret
-    return_hit:
+return_hit:
         mv a0,t0
         ret
 
 getAtMost: # a0=val, a1=root
     mv t0,a1
     li t1,0
-    traversal_getmost:
+traversal_getmost:
         beqz t0,logic
         lw t2,NODE_VAL(t0)      # lw because int is 4 bytes
         bgt t2,a0,go_left       # current > target, go left
@@ -90,16 +108,13 @@ getAtMost: # a0=val, a1=root
         beq t2,a0,logic         # exact match, stop early
         ld t0,NODE_RIGHT(t0)    # current < target, go right
         j traversal_getmost
-    go_left:
+go_left:
         ld t0,NODE_LEFT(t0)
         j traversal_getmost
-    logic:
+logic:
         beqz t1,miss_most
         lw a0,NODE_VAL(t1)      # return best match value
         ret
-    miss_most:
+miss_most:
         li a0,-1
         ret
-
-
-
